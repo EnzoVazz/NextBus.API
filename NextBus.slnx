@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="src/NextBus.Domain/NextBus.Domain.csproj" />
+  <Project Path="src/NextBus.Application/NextBus.Application.csproj" />
+  <Project Path="src/NextBus.Infrastructure/NextBus.Infrastructure.csproj" />
+  <Project Path="src/NextBus.Api/NextBus.Api.csproj" />
+  <Project Path="tests/NextBus.Domain.Tests/NextBus.Domain.Tests.csproj" />
+  <Project Path="tests/NextBus.API.Tests/NextBus.API.Tests.csproj" />
+</Solution>
