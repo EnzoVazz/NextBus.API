@@ -1,105 +1,175 @@
-# NextBus
+## 👥 Integrantes do Grupo (Turma 2TDSPF)
+* **Enzo Vaz** - RM: 561702
+* **Lucas Ryuji Fukuda** - RM: 562152
+* **Pietro Donela Salomão** - RM: 561722
 
-API do aviso de chegada do ônibus, entrega de Advanced Business Development with .NET da Global Solution 2026/2. O piloto é São Paulo. O aplicativo do grupo continua apontando para a API Java. Esta API repete o mesmo contrato.
+# 🚌 NextBus API - Global Solution 2026/2
 
-## Integrantes
+## 📌 Descrição do Projeto
 
-* **Enzo Vaz** — RM: 561702 — 2TDSPF
-* **Lucas Ryuji Fukuda** — RM: 562152 — 2TDSPF
-* **Pietro Donela Salomão** — RM: 561722 — 2TDSPF
+A **NextBus API** é o backend do aviso de chegada do ônibus, entrega de Advanced Business Development with .NET. Em **.NET 10** e **Clean Architecture**, ela consulta linhas, paradas e posições em São Paulo e avisa, na janela da rotina, quantos minutos faltam para o ônibus chegar no ponto. A frase do aviso é padrão: letreiro, ponto, minutos, idade do GPS e, se houver, o comunicado vigente. Sem veículo, o texto não inventa acidente, desvio nem lotação. A geração por IA fica na disciplina de Disruptive Architectures.
 
-## O que a API faz
+O aplicativo do grupo continua apontando para a API Java. Esta API repete o mesmo contrato.
 
-A pessoa consulta linhas, paradas e a posição dos ônibus. Quem repete o mesmo embarque cadastra uma rotina. Na janela do horário, `GET /avisos` devolve quantos minutos faltam para o ônibus chegar no ponto.
+## 🏗️ Arquitetura
 
-A frase do aviso é padrão. Ela usa letreiro, ponto, minutos, idade do GPS e, se houver, o comunicado vigente carregado no projeto. Sem comunicado e sem veículo, o texto não inventa acidente, desvio nem lotação. A geração por IA fica na disciplina de Disruptive Architectures.
+```mermaid
+flowchart LR
+    Cliente["Cliente / Swagger"] --> Api["NextBus.Api<br/>Minimal API, JWT, Swagger"]
+    Api --> App["NextBus.Application<br/>Casos de uso"]
+    App --> Dominio["NextBus.Domain<br/>Entidades e regras"]
+    App --> Infra["NextBus.Infrastructure<br/>Repositórios e Olho Vivo"]
+    Infra --> Oracle["Oracle<br/>EF Core"]
+    Infra --> Olho["Olho Vivo<br/>SPTrans"]
+    Api --> Health["/health"]
+```
 
-## Tecnologias
+| Camada | Responsabilidade |
+|---|---|
+| `NextBus.Api` | HTTP, Swagger, JWT, rate limit e health checks |
+| `NextBus.Application` | Casos de uso, DTOs e contratos dos repositórios |
+| `NextBus.Domain` | Entidades, exceções e a regra do aviso |
+| `NextBus.Infrastructure` | Entity Framework Core (Oracle) e cliente da Olho Vivo |
+| `NextBus.Domain.Tests` | Regra do aviso com xUnit, sem banco e sem HTTP |
+| `NextBus.API.Tests` | Endpoints com `WebApplicationFactory` |
 
-* **API:** ASP.NET Core Minimal API (`net10.0`), Swagger/OpenAPI, JWT e rate limit nativo
-* **ORM:** Entity Framework Core com Oracle 19c (`UseOracleSQLCompatibility(DatabaseVersion19)`)
-* **Trânsito:** API Olho Vivo, da SPTrans
-* **Testes:** xUnit (`NextBus.Domain.Tests` e `NextBus.API.Tests`)
+O endpoint não acessa o `DbContext`. Ele chama o service da Application, o service aplica a regra do Domain e o repositório concreto persiste. Erros de validação, conflito, acesso e limite passam por um tratador global e voltam como JSON `{ "titulo", "status", "erros": [{ "campo", "mensagem" }] }`. O health não usa esse formato: devolve `status` e `resultados`.
 
-O erro de validação, conflito, acesso negado e limite usa o mesmo JSON, com `titulo`, `status` e `erros`. O health não devolve esse formato: ele devolve `status` e `resultados`.
+## 🚀 O que a API entrega
 
-## Estrutura
+* **Minimal API:** cadastro, login, rotinas, avisos, linhas, paradas, posições, previsão, planejamento e o painel do gestor, com validação e códigos HTTP.
+* **JWT:** `POST /auth/login` devolve o token. Leitura exige sessão. Rotina e aviso exigem o papel `CIDADAO`. O painel exige `GESTOR`.
+* **Idempotência:** `POST /rotinas` exige o cabeçalho `Idempotency-Key`. A mesma chave e o mesmo corpo devolvem a rotina já criada. Outro corpo com a mesma chave responde `409`.
+* **Rate limit:** linhas, paradas, posições e previsão aceitam 60 consultas por minuto. Acima disso, HTTP `429`.
+* **Oracle:** Entity Framework Core no Oracle 19c da FIAP. As tabelas `USUARIO`, `ROTINA` e `AVISO` vêm do script do grupo. `SENHA` e `IDEMPOTENCIA` são criadas pela API no mesmo schema, fora desse script.
+* **Olho Vivo:** linha, posição e previsão usam a SPTrans quando a autenticação responde `true`. Se falhar, a API usa um recorte local e o health marca `olhovivo` como degradado.
+* **Health check:** `GET /health` confere o banco e a autenticação na Olho Vivo.
+* **Testes:** xUnit da janela do aviso e dos endpoints.
 
-* **`NextBus.Domain`:** entidades, exceções e a regra do aviso (janela, escolha do ônibus, minutos e frase).
-* **`NextBus.Application`:** DTOs, portas e casos de uso. A API não expõe as entidades.
-* **`NextBus.Infrastructure`:** EF Core, Oracle, hash de senha e cliente da Olho Vivo.
-* **`NextBus.Api`:** Minimal API, JWT, Swagger, health e o tratamento de erro.
-* **`NextBus.Domain.Tests`:** a regra do aviso, sem banco e sem HTTP.
-* **`NextBus.API.Tests`:** os endpoints, contra o Oracle da FIAP.
+### Papéis
 
-## Como executar
+| E-mail | Senha | Papel | O que pode fazer |
+|---|---|---|---|
+| `marina.costa@email.com` | `Marina#2026` | CIDADAO | Consultar, planejar, manter as próprias rotinas e ler os avisos delas |
+| `ricardo.nunes@email.com` | `Ricardo#2026` | GESTOR | Consultar e ver `GET /operacao/linhas-sem-gps`. Não entra nas rotinas do cidadão |
 
-1. Abra a pasta `NextBus` no Rider e confirme a solução `NextBus.slnx`.
-2. A senha do Oracle fica em `src/NextBus.Api/appsettings.Local.json`, fora do git. O arquivo só precisa da chave `Oracle:Password`. O host, a porta, o SID e o usuário já estão no `appsettings.json`.
-3. O token da Olho Vivo fica na variável de ambiente `OLHOVIVO_TOKEN`, também fora do código.
-4. Rode o perfil `http` do projeto `NextBus.Api`.
+O cadastro público cria apenas `CIDADAO`. A senha não fica na tabela `USUARIO`: o hash vai para `SENHA`. Essas contas são só de demonstração.
+
+---
+
+# 🛠️ Instalação e execução
+
+## Pré-requisitos
+
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+- Oracle da FIAP acessível (`oracle.fiap.com.br`, porta `1521`, SID `ORCL`)
+
+## Passo a passo
+
+### 1. Clone
+
+```bash
+git clone https://github.com/EnzoVazz/NextBus.API
+cd NextBus.API
+```
+
+### 2. Senha do Oracle e token da Olho Vivo
+
+O host, a porta, o SID e o usuário já estão em `src/NextBus.Api/appsettings.json`. A senha fica em `src/NextBus.Api/appsettings.Local.json`, fora do git:
+
+```json
+{
+  "Oracle": {
+    "Password": "SUA_SENHA"
+  }
+}
+```
+
+O token da Olho Vivo fica na variável de ambiente `OLHOVIVO_TOKEN`, também fora do código.
+
+### 3. Subir a API
+
+No Rider, abra a solução `NextBus.slnx` e rode o perfil `http` do projeto `NextBus.Api`.
 
 Na linha de comando, na pasta do projeto:
 
-```powershell
-dotnet test NextBus.slnx
+```bash
 dotnet run --project src/NextBus.Api --launch-profile http
 ```
 
-| Endereço | Uso |
-| --- | --- |
-| http://localhost:5218/swagger | Swagger |
-| http://localhost:5218/health | Banco e autenticação na Olho Vivo |
+Swagger: `http://localhost:5218/swagger`
 
-No Swagger, o `POST /auth/login` devolve o campo `token`. O botão **Authorize** recebe só esse valor, sem a palavra Bearer. As rotas protegidas passam a enviar o cabeçalho.
+No Swagger, chame `POST /auth/login`, copie o campo `token` e use **Authorize** só com esse valor, sem a palavra Bearer.
 
-`GET /health` não aparece na lista do Swagger. Com a Olho Vivo autenticada, os dois itens ficam `Healthy`. Se `POST /Login/Autenticar` responder `false`, o item `olhovivo` fica degradado e a API continua no ar.
+### 4. Testes
 
-## Usuários
+```bash
+dotnet test NextBus.slnx
+```
 
-O cadastro público cria apenas cidadão. O gestor entra pelo usuário do script.
+Os testes de domínio não usam banco. Os testes de API usam o mesmo Oracle, entram com a Marina e o Ricardo e apagam só os usuários que eles mesmos criam. As rotinas do script permanecem.
 
-| E-mail | Senha | Papel |
-| --- | --- | --- |
-| marina.costa@email.com | Marina#2026 | CIDADAO |
-| ricardo.nunes@email.com | Ricardo#2026 | GESTOR |
+---
 
-A senha não está na tabela `USUARIO`. A API grava o hash na tabela `SENHA`.
+# 🛣️ Endpoints
 
-## Banco
+## Autenticação
 
-A API usa o Oracle da FIAP (`oracle.fiap.com.br`, porta `1521`, SID `ORCL`) e as tabelas do script do grupo: `USUARIO`, `ROTINA` e `AVISO`. Os ids são numéricos. Os dias ficam como `1` (segunda) a `7` (domingo). `ativa` fica `S` ou `N`.
+`POST /auth/registrar` e `POST /auth/login` são públicos. O cadastro recebe nome, e-mail e senha e cria um `CIDADAO`. O login responde `token`, `papel` e `nome`.
 
-`SENHA` e `IDEMPOTENCIA` são criadas pela API no mesmo schema. Elas não fazem parte do script do grupo. `IDEMPOTENCIA` guarda a chave `Idempotency-Key` do `POST /rotinas`.
+`GET /auth/eu` exige sessão e devolve a pessoa autenticada.
 
-## Olho Vivo
+## Health — `GET /health`
 
-O cliente autentica com o token, guarda o cookie e renova a sessão a cada 20 minutos. Linha, posição e previsão ficam em cache por 15 segundos.
+Público. Não aparece na lista do Swagger. O JSON traz `status` e `resultados`, com `banco` e `olhovivo`. Com a Olho Vivo autenticada, os dois ficam `Healthy`. Se `POST /Login/Autenticar` responder `false`, `olhovivo` fica `Degraded` e a API continua no ar.
 
-Com a autenticação em `true`, essas três consultas usam a SPTrans. Se o login responder `false` ou a chamada falhar, a API usa o recorte local e o health marca `olhovivo` como degradado.
+## Consulta
 
-O recorte local não é o GTFS completo. Ele cobre a linha 7021-10, a parada Roberto Selmi Dei, o Jardim Maracá para a viagem direta e a linha 8000-10 com GPS de cinco minutos para o painel do gestor. `GET /paradas/proximas` e `POST /viagens/planejar` usam esse recorte para o mapa. O planejador devolve até três opções diretas, sem baldeação. Um endereço fora da lista volta erro de validação.
+Exige sessão. Limite de 60 por minuto.
 
-## Aviso
+| Rota | O que devolve |
+|---|---|
+| `GET /linhas?q=` | Linhas pelo número ou pelo nome |
+| `GET /paradas/proximas?lat=&lng=` | Paradas do recorte local perto de uma coordenada |
+| `GET /linhas/{codigo}/posicoes` | Posição dos ônibus, com letreiro, sentido, acessibilidade e idade do GPS |
+| `GET /previsao?parada=&linha=` | Previsão da parada e da linha |
 
-Vinte minutos antes do horário, a rotina entra na janela. Entre os ônibus que ainda vão chegar, fica o de previsão mais perto do horário. O acompanhamento gruda no prefixo daquele dia. Os minutos são a previsão menos o relógio da feed. A primeira frase sai com no máximo 15 minutos e a mesma notificação atualiza ao cruzar 10, 5 e 2. Em zero, ou se o veículo sai da previsão, o aviso encerra. Sem veículo na janela, sai uma vez a frase sem número.
+Com a Olho Vivo autenticada, linha, posição e previsão vêm da SPTrans e ficam em cache por 15 segundos. `GET /paradas/proximas` continua no recorte local.
 
-## Contrato
+## Planejamento — `POST /viagens/planejar`
 
-| Rota | Acesso |
-| --- | --- |
-| `POST /auth/registrar`, `POST /auth/login` | Público. O cadastro cria só `CIDADAO`. |
-| `GET /auth/eu` | Sessão. |
-| `GET /linhas`, `GET /paradas/proximas`, `GET /linhas/{codigo}/posicoes`, `GET /previsao` | Sessão. Limite de 60 consultas por minuto. Acima disso, HTTP 429. |
-| `POST /viagens/planejar`, CRUD de `/rotinas`, `GET /avisos` | Cidadão, só nas rotinas dele. |
-| `POST /rotinas` | Exige o cabeçalho `Idempotency-Key`. A mesma chave e o mesmo corpo devolvem a rotina já criada. Outro corpo com a mesma chave responde 409. |
-| `GET /operacao/linhas-sem-gps` | Gestor. Linhas com GPS acima de três minutos. |
-| `GET /health` | Público. Banco e autenticação na Olho Vivo. |
+Papel `CIDADAO`. Devolve até três viagens diretas entre a origem e o endereço de destino, sem baldeação. O recorte cobre a linha `7021-10`, a parada Roberto Selmi Dei e o Jardim Maracá. Um endereço fora da lista responde `400`.
 
-O JWT leva o papel `CIDADAO` ou `GESTOR`.
+## Rotinas — `/rotinas`
 
-## Testes
+Papel `CIDADAO`, só nas rotinas da pessoa autenticada. `GET`, `POST`, `PUT` e `DELETE`.
 
-`dotnet test NextBus.slnx` cobre a janela da rotina, a escolha do ônibus das 7h18 para a rotina das 7h15, a notificação única atualizada em 15, 10, 5 e 2 minutos, o atraso sem trocar de veículo, a frase sem previsão, o comunicado vigente e os endpoints de acesso, rotina, aviso, planejamento, painel e limite.
+`POST /rotinas` exige `Idempotency-Key`. Sem a chave, responde `400`. A mesma chave e o mesmo corpo respondem `200` com a rotina já criada. Outro corpo na mesma chave responde `409`.
 
-Os testes de API usam o mesmo Oracle. O login entra com a Marina e o Ricardo. O teste do aviso cria uma rotina daqui a 15 minutos no ponto Roberto Selmi Dei, linha 7021-10, confere o veículo 74558 com 12 minutos e apaga o que criou. As rotinas do script permanecem.
+Os dias entram como `SEG`, `TER`, `QUA`, `QUI`, `SEX`, `SAB` e `DOM` e ficam gravados como `1` (segunda) a `7` (domingo). `ativa` omitida nasce ligada. No Oracle, `ativa` fica `S` ou `N`.
+
+## Avisos — `GET /avisos`
+
+Papel `CIDADAO`. Calcula os avisos do dia das rotinas da pessoa.
+
+Vinte minutos antes do horário, a rotina entra na janela. Entre os ônibus que ainda vão chegar, fica o de previsão mais perto do horário. O acompanhamento gruda no prefixo daquele dia. A primeira frase sai com no máximo 15 minutos e a mesma notificação atualiza ao cruzar 10, 5 e 2. Em zero, ou se o veículo sai da previsão, o aviso encerra. Sem veículo na janela, sai uma vez a frase sem número.
+
+## Operação — `GET /operacao/linhas-sem-gps`
+
+Papel `GESTOR`. Lista linhas cujo GPS mais recente passou de três minutos. No recorte local, a linha `8000-10` entra nesse painel. Um cidadão recebe `403`.
+
+---
+
+# 📌 Status codes
+
+| Status | Quando |
+|---|---|
+| `200 OK` | Consulta, login ou repetição da mesma `Idempotency-Key` |
+| `201 Created` | Cadastro de cidadão ou de rotina |
+| `204 No Content` | Exclusão da rotina |
+| `400 Bad Request` | Validação ou `Idempotency-Key` ausente |
+| `401 Unauthorized` | Sem token ou credencial inválida |
+| `403 Forbidden` | Token válido sem o papel exigido |
+| `404 Not Found` | Rotina inexistente ou de outra pessoa |
+| `409 Conflict` | Mesma chave com outro corpo, ou rotina ativa duplicada |
+| `429 Too Many Requests` | Limite de consultas atingido |
